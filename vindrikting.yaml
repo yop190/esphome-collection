@@ -1,0 +1,261 @@
+# a bit of inspiration from https://github.com/TataGEEK/IKEA-Vindriktning/blob/main/ikea-semafor.yaml
+
+substitutions:
+  node_name: IKEA semaphore
+
+  sensor_fan: GPIO12
+
+  pm1006_pin_rx: GPIO16
+  pm1006_pin_tx: GPIO17
+
+  mhz19_pin_rx: GPIO22
+  mhz19_pin_tx: GPIO21
+
+  GPIO_RGB_LED: GPIO25
+  
+  GPIO_IR_SENSOR: GPIO33 # for v3.0+
+  
+  GPIO_BUZZER: GPIO2 # for v3.0+
+
+esphome:
+  name: ikea-semaphore
+  #compile_process_limit: 1  seems to be useful on low-RAM devices; on high-RAM devices, it just slows down compilation
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf	# IDF is recommended for better BLE proxy support
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  password: !secret ota_key
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  use_address: !secret ip_address
+
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 1100ms
+
+bluetooth_proxy:
+  active: true
+  cache_services: true  # requires esp-idf
+
+script:
+  - id: evaluate_air_quality
+    then:
+      - if:
+          condition:
+            - lambda: 'return id(fan_control).state;'
+          then:
+            - logger.log: "Fan is ON"
+            - switch.turn_on: fan
+            - logger.log: "Waiting 10s"
+            - delay: 10s
+            # TODO: do I need it?
+            #- sensor.template.publish:
+            #    id: pm2_5_value
+            #    state: !lambda return id(pm2_5_value).state;
+            - logger.log: "Fan is OFF"
+            - switch.turn_off: fan
+      - if:
+          condition:
+            - lambda: 'return isnan(id(co2_value).state);'
+          then:
+            - logger.log: "Waiting for CO2 sensor"
+          else:
+            - logger.log: "CO2 sensor is ready"
+
+
+switch:
+
+  - platform: template
+    id: fan_control
+    name: "${node_name} fan periodic"
+    optimistic: true
+
+  - platform: gpio
+    pin: $sensor_fan
+    id: fan
+    name: "${node_name} fan running"
+    internal: false
+    icon: mdi:fan
+    entity_category: config
+
+  - platform: restart
+    name: "${node_name} restart"
+
+uart:
+  - id: uart_pm1006 # PM2.5
+    rx_pin: ${pm1006_pin_rx}
+    tx_pin: ${pm1006_pin_tx}
+    baud_rate: 9600
+
+  - id: uart_mhz19 # CO2
+    rx_pin: ${mhz19_pin_rx}
+    tx_pin: ${mhz19_pin_tx}
+    baud_rate: 9600
+
+sensor:
+  - platform: pm1006
+    uart_id: uart_pm1006
+    pm_2_5:
+      name: "${node_name} PM2.5"
+      id: pm2_5_value
+      internal: false
+    update_interval: 2min    # TODO: Why 2min when fan is running every minute?
+
+  - platform: wifi_signal
+    name: "${node_name} WiFi Signal"
+    entity_category: diagnostic
+
+  - platform: mhz19  # https://esphome.io/components/sensor/mhz19.html
+    id: co2_sensor
+    uart_id: uart_mhz19
+    co2:
+      name: "${node_name} CO2"
+      id: co2_value
+    temperature:
+      name: "${node_name} temperature"
+    update_interval: 60s
+    automatic_baseline_calibration: false # reportedly better for indoor
+    
+  # TODO: something more useful than voltage reading
+  - platform: adc
+    pin: "${GPIO_IR_SENSOR}"
+    name: "${node_name} IR sensor raw"
+    update_interval: 60s
+
+button:
+
+  - platform: restart
+    name: "${node_name} restart"
+
+  - platform: shutdown
+    name: "${node_name} shutdown"
+
+  - platform: template
+    name: "${node_name} CO2: Calibrate zero"
+    on_press:
+      - logger.log: "CO2: Zero calibration started"
+      - mhz19.calibrate_zero: co2_sensor
+      - logger.log: "CO2: Zero calibration finished"
+
+  - platform: template
+    name: "${node_name} buzz"
+    on_press:
+      - output.ledc.set_frequency:
+          id: buzzer_output
+          frequency: 1000Hz
+      - output.set_level:
+          id: buzzer_output
+          level: 50%
+
+  # various sounds from https://esphome.io/components/rtttl.html
+  - platform: template
+    name: "${node_name} siren"
+    on_press:
+      - rtttl.play: 'siren:d=8,o=5,b=100:d,e,d,e,d,e,d,e'
+
+  - platform: template
+    name: "${node_name} two short"
+    on_press:
+      - rtttl.play: 'two_short:d=4,o=5,b=100:16e6,16e6'
+
+  - platform: template
+    name: "${node_name} long"
+    on_press:
+      - rtttl.play: 'long:d=1,o=5,b=100:e6'
+
+  - platform: template
+    name: "${node_name} scale up"
+    on_press:
+      - rtttl.play: 'scale_up:d=32,o=5,b=100:c,c#,d#,e,f#,g#,a#,b'
+
+  - platform: template
+    name: "${node_name} Star Wars"
+    on_press:
+      - rtttl.play: 'star_wars:d=16,o=5,b=100:4e,4e,4e,8c,p,g,4e,8c,p,g,4e,4p,4b,4b,4b,8c6,p,g,4d#,8c,p,g,4e,8p'
+
+  - platform: template
+    name: "${node_name} Mission Impossible"
+    on_press:
+      - rtttl.play: 'mission_imp:d=16,o=6,b=95:32d,32d#,32d,32d#,32d,32d#,32d,32d#,32d,32d,32d#,32e,32f,32f#,32g,g,8p,g,8p,a#,p,c7,p,g,8p,g,8p,f,p,f#,p,g,8p,g,8p,a#,p,c7,p,g,8p,g,8p,f,p,f#,p,a#,g,2d,32p,a#,g,2c#,32p,a#,g,2c,a#5,8c,2p,32p,a#5,g5,2f#,32p,a#5,g5,2f,32p,a#5,g5,2e,d#,8d'
+
+  - platform: template
+    name: "${node_name} Mario"
+    on_press:
+      - rtttl.play: 'mario:d=4,o=5,b=100:16e6,16e6,32p,8e6,16c6,8e6,8g6,8p,8g,8p,8c6,16p,8g,16p,8e,16p,8a,8b,16a#,8a,16g.,16e6,16g6,8a6,16f6,8g6,8e6,16c6,16d6,8b,16p,8c6,16p,8g,16p,8e,16p,8a,8b,16a#,8a,16g.,16e6,16g6,8a6,16f6,8g6,8e6,16c6,16d6,8b,8p,16g6,16f#6,16f6,16d#6,16p,16e6,16p,16g#,16a,16c6,16p,16a,16c6,16d6,8p,16g6,16f#6,16f6,16d#6,16p,16e6,16p,16c7,16p,16c7,16c7,p,16g6,16f#6,16f6,16d#6,16p,16e6,16p,16g#,16a,16c6,16p,16a,16c6,16d6,8p,16d#6,8p,16d6,8p,16c6'
+
+  - platform: template
+    name: "${node_name} stop ringing"
+    on_press:
+      - rtttl.stop
+
+rtttl:
+  output: buzzer_output
+  id: ringer
+  gain: 60%
+
+light:
+  - id: led_rgb  # used to briefly flash on boot, but stopped, maybe after adding individual lights…
+    internal: False
+    platform: esp32_rmt_led_strip
+    rgb_order: GRB
+    chipset: WS2812
+    pin: $GPIO_RGB_LED
+    num_leds: 3
+    #rmt_channel: 6   # Don't know why, and it probably doesn't matter…
+    rmt_channel: 4
+    name: "${node_name} RGB LED indicator"
+    effects:
+      - random:
+      - pulse:
+      - addressable_rainbow:
+      - addressable_color_wipe:
+      - addressable_scan:
+      - addressable_twinkle:
+      - addressable_random_twinkle:
+      - addressable_fireworks:
+      - addressable_flicker:
+
+  - platform: partition
+    name: "${node_name} LED bottom"
+    segments:
+      - id: led_rgb
+        from: 0
+        to: 0
+
+  - platform: partition
+    name: "${node_name} LED middle"
+    segments:
+      - id: led_rgb
+        from: 1
+        to: 1
+
+  - platform: partition
+    name: "${node_name} LED top"
+    segments:
+      - id: led_rgb
+        from: 2
+        to: 2
+
+output:
+  - platform: ledc
+    pin: "${GPIO_BUZZER}"
+    id: buzzer_output
+
+interval:
+  - interval: 1min
+    then:
+      - script.execute: evaluate_air_quality
