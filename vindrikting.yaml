@@ -60,22 +60,25 @@ script:
           then:
             - logger.log: "Fan is ON"
             - switch.turn_on: fan
-            - logger.log: "Waiting 10s"
-            - delay: 10s
-            # TODO: do I need it?
-            #- sensor.template.publish:
-            #    id: pm2_5_value
-            #    state: !lambda return id(pm2_5_value).state;
-            - logger.log: "Fan is OFF"
-            - switch.turn_off: fan
+
+      - logger.log: "Waiting for fan and fun"
+      - delay: 3s
+
+      - logger.log: "Requesting update from PM1006"
+      - uart.write:
+          id: uart_pm1006
+          data: [ 0x11, 0x02, 0x0B, 0x01, 0xE1 ]
+
+      # The fan should be automatically turned off by on_value, but when reading fails, we should disable it anyway
       - if:
           condition:
-            - lambda: 'return isnan(id(co2_value).state);'
+            - lambda: 'return id(fan_control).state;'
           then:
-            - logger.log: "Waiting for CO2 sensor"
-          else:
-            - logger.log: "CO2 sensor is ready"
-
+            # According to the PM1006 datasheet, it might take up to 8 seconds. It is usually immediate, but we'll be more generous:
+            - logger.log: "Waiting 10s (timeout)"
+            - delay: 10s
+            - logger.log: "Fan is OFF"
+            - switch.turn_off: fan
 
 switch:
 
@@ -109,11 +112,24 @@ uart:
 sensor:
   - platform: pm1006
     uart_id: uart_pm1006
+    # No automatic update. We'll request it manually to ensure proper sync with fan.
     pm_2_5:
       name: "${node_name} PM2.5"
       id: pm2_5_value
       internal: false
-    update_interval: 2min    # TODO: Why 2min when fan is running every minute?
+      on_value:
+        then:
+          # record whether fan was running during measurement
+          - binary_sensor.template.publish:
+              id: pm1006_with_fan_running
+              state: !lambda 'return id(fan).state;'
+          # disable fan (if allowed) as we no longer need it
+          - if:
+              condition:
+                - lambda: 'return id(fan_control).state;'
+              then:
+                - logger.log: "Turning fan OFF after successful read"
+                - switch.turn_off: fan
 
   - platform: wifi_signal
     name: "${node_name} WiFi Signal"
@@ -135,6 +151,12 @@ sensor:
     pin: "${GPIO_IR_SENSOR}"
     name: "${node_name} IR sensor raw"
     update_interval: 60s
+
+binary_sensor:
+
+  - platform: template
+    id: pm1006_with_fan_running
+    name: "${node_name} PM2.5 measured when fan was running"
 
 button:
 
