@@ -54,6 +54,7 @@ bluetooth_proxy:
 script:
   - id: evaluate_air_quality
     then:
+      # FIXME: when fan_control is changed (esp. turned off) during this script, it probably should keep using the old value
       - if:
           condition:
             - lambda: 'return id(fan_control).state;'
