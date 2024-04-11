@@ -52,9 +52,8 @@ bluetooth_proxy:
   cache_services: true  # requires esp-idf
 
 script:
-  - id: evaluate_air_quality
+  - id: update_sensors_requiring_fan
     then:
-      # FIXME: when fan_control is changed (esp. turned off) during this script, it probably should keep using the old value
       - if:
           condition:
             - lambda: 'return id(fan_control).state;'
@@ -69,17 +68,27 @@ script:
       - uart.write:
           id: uart_pm1006
           data: [ 0x11, 0x02, 0x0B, 0x01, 0xE1 ]
+          
+      # Usually, fan is turned off by sensor's on_value handler.
+      # However, when reading fails, we have a timeout.
 
-      # The fan should be automatically turned off by on_value, but when reading fails, we should disable it anyway
       - if:
           condition:
             - lambda: 'return id(fan_control).state;'
           then:
             # According to the PM1006 datasheet, it might take up to 8 seconds. It is usually immediate, but we'll be more generous:
-            - logger.log: "Waiting 10s (timeout)"
+            - logger.log: "Waiting for timeout"
             - delay: 10s
-            - logger.log: "Fan is OFF"
-            - switch.turn_off: fan
+            - if:
+                condition:
+                  - lambda: 'return id(fan).state;'
+                then:
+                  - logger.log:
+                      format: "Fan is stil running after timeout, we'll disable it!"
+                      level: WARN
+                  - switch.turn_off: fan
+                else:
+                  - logger.log: "Fan was turned of before timeout, which is fine."
 
 switch:
 
@@ -87,6 +96,9 @@ switch:
     id: fan_control
     name: "${node_name} fan periodic"
     optimistic: true
+    turn_off_action:
+      # prevent indefinite fan running when turned off when sensing
+      - switch.turn_off: fan
 
   - platform: gpio
     pin: $sensor_fan
@@ -95,9 +107,6 @@ switch:
     internal: false
     icon: mdi:fan
     entity_category: config
-
-  - platform: restart
-    name: "${node_name} restart"
 
 uart:
   - id: uart_pm1006 # PM2.5
@@ -119,12 +128,16 @@ sensor:
       id: pm2_5_value
       internal: false
       on_value:
+        # This should happen only when requested by update_sensors_requiring_fan script
         then:
+
           # record whether fan was running during measurement
           - binary_sensor.template.publish:
               id: pm1006_with_fan_running
               state: !lambda 'return id(fan).state;'
-          # disable fan (if allowed) as we no longer need it
+
+          # As this is currently the only sensor that requires fan, we no longer need the fan to run.
+          # When we add multiple fan-dependent sensors, this will need to be adjusted, so fan is disabled by the last result.
           - if:
               condition:
                 - lambda: 'return id(fan_control).state;'
@@ -281,4 +294,4 @@ output:
 interval:
   - interval: 1min
     then:
-      - script.execute: evaluate_air_quality
+      - script.execute: update_sensors_requiring_fan
