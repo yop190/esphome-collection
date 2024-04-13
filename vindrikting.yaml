@@ -34,10 +34,14 @@ esphome:
       - number.set:
           id: fan_time_before_pm25
           value: 10_000
-      - light.turn_on: 
-          id: led_rgb
-          brightness: 30%
-          effect: "Air status"
+      # TODO: only on secondary Wi-Fi
+      - if:
+          condition: !secret light_auto_on_condition
+          then:
+            - light.turn_on: 
+                id: led_rgb
+                brightness: 30%
+                effect: "Air status"
 
 esp32:
   board: esp32dev
@@ -163,7 +167,7 @@ number:
     optimistic: true
 
   - platform: template
-    id: orange_green_exponent	# how steep is transition from orange to red
+    id: orange_green_exponent  # how steep is transition from orange to red
     name: "${node_name} orange: green component: exponent"
     min_value: 1
     max_value: 5
