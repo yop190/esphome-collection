@@ -26,7 +26,6 @@ esphome:
     then:
       - number.set:
           id: orange_green
-          #value: 185
           value: 215
       - number.set:
           id: orange_green_exponent
@@ -34,7 +33,6 @@ esphome:
       - number.set:
           id: fan_time_before_pm25
           value: 10_000
-      # TODO: only on secondary Wi-Fi
       - if:
           condition: !secret light_auto_on_condition
           then:
@@ -240,7 +238,7 @@ binary_sensor:
     
   - platform: homeassistant
     name: "Want window open"
-    entity_id: input_boolean.want_window_open_auto
+    entity_id: input_boolean.want_window_open
     id: want_window_open
  
   - platform: homeassistant
@@ -252,6 +250,11 @@ binary_sensor:
     name: "Sleep mode"
     entity_id: input_boolean.sleep_mode
     id: sleep_mode
+
+  - platform: homeassistant
+    name: "Room might be heated by ventilation"
+    entity_id: binary_sensor.room_might_be_heated_by_ventilation
+    id: heating_suspect
 
 button:
 
@@ -356,16 +359,24 @@ light:
               it.all() = Color::BLACK;
               return;
             }
-            
-            // TODO: indentation for ternary operators
-            
+                        
             const float co2 = id(fake_co2).state ? id(fake_co2_value).state : id(co2_value).state;
             const float pm25 = id(pm2_5_value).state;
             const int ha_connected = id(ha_api).is_connected();
             //ESP_LOGD("air status", "co2: % 7.2f pm25: % 7.2f", co2, pm25);
             
-            const int og = id(orange_green).state;
-            const int ogex = id(orange_green_exponent).state;
+            const bool heating_warning = (co2 < 420) && id(heating_suspect).state;
+            static bool heating_warning_previous = false;
+            static bool heating_warning_led = false;
+            if (heating_warning) {
+              // blink on every update
+              heating_warning_led = heating_warning_previous ? !heating_warning_led : true;
+            }
+            
+            heating_warning_previous = heating_warning;
+            
+            const int ogrc = id(orange_green).state;
+            const int ogrex = id(orange_green_exponent).state;
             
             // top: CO2 smooth indicator with sudden break at 1000 ppm (=ventilation suggested)
             it.get(2) = 
@@ -376,24 +387,24 @@ light:
                     /* red = */ min(255, max(0, (int)((co2 - 400.0) / 600.0 * 255.0))),
                     /* green = */ 
                     (co2 > 1000)
-                      ? (og - min(og, max(0, (int)(pow((co2 - 1000.0) / 500.0, ogex) * og))))
+                      ? (ogrc - min(ogrc, max(0, (int)(pow((co2 - 1000.0) / 500.0, ogrex) * ogrc))))
                       : 255,
                     /* blue = */ 0
                   );
             
             // middle: CO2 very low / very high or warning about temporary curtain settings
             it.get(1) = 
-              (co2 < 420)
+              (  heating_warning
+                ? (heating_warning_led ? Color(255, 255, 0) : Color(0, 255, 0))
+              : ((co2 < 420)
                 ? Color(0, 255, 0)
-                : (
-                  (co2 > 1500)
-                    ? Color(255, 0, 0)
-                    : (
-                      (ha_connected && (!id(curtains_auto).state || id(want_window_open).state))
-                        ? Color(255, 165, 0)
-                        : Color::BLACK
-                      )
-                  );
+              : ((co2 > 1500)
+                ? Color(255, 0, 0)
+              : ((ha_connected && (!id(curtains_auto).state || id(want_window_open).state))
+                ? Color(255, ogrc, 0)
+              : /* default*/ Color::BLACK
+              )
+            )));
               
               
             // bottom: PM25
@@ -402,9 +413,9 @@ light:
                 ? Color::BLACK
                 : 
                   Color(
-                    min(255, max(0, (int)((pm25 - 5.0) / 15.0 * 255.0))),
-                    (pm25 > 20) ? 0 : 255,
-                    0
+                    /* red = */  min(255, max(0, (int)((pm25 - 5.0) / 15.0 * 255.0))),
+                    /* green = */ (pm25 > 20) ? 0 : 255,
+                    /* blue = */ 0
                   );
               
             //ESP_LOGD("air status", "top:    RGB(%3d, %3d, %3d)", it.get(2).get_red(), it.get(2).get_green(), it.get(2).get_blue());
