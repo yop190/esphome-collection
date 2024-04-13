@@ -21,10 +21,28 @@ esphome:
   name: ikea-semaphore
   #compile_process_limit: 1  seems to be useful on low-RAM devices; on high-RAM devices, it just slows down compilation
 
+  on_boot:
+    priority: -10
+    then:
+      - number.set:
+          id: orange_green
+          #value: 185
+          value: 215
+      - number.set:
+          id: orange_green_exponent
+          value: 4
+      - number.set:
+          id: fan_time_before_pm25
+          value: 10_000
+      - light.turn_on: 
+          id: led_rgb
+          brightness: 30%
+          effect: "Air status"
+
 esp32:
   board: esp32dev
   framework:
-    type: esp-idf	# IDF is recommended for better BLE proxy support
+    type: esp-idf  # IDF is recommended for better BLE proxy support
 
 # Enable logging
 logger:
@@ -33,14 +51,17 @@ logger:
 api:
   encryption:
     key: !secret api_encryption_key
+  id: ha_api
 
 ota:
   password: !secret ota_key
 
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  use_address: !secret ip_address
+wifi: !secret wifi
+
+web_server:
+  port: 80
+  ota: false
+  local: true
 
 esp32_ble_tracker:
   scan_parameters:
@@ -62,7 +83,7 @@ script:
             - switch.turn_on: fan
 
       - logger.log: "Waiting for fan and fun"
-      - delay: 3s
+      - delay: !lambda "return id(fan_time_before_pm25).state;"
 
       - logger.log: "Requesting update from PM1006"
       - uart.write:
@@ -97,7 +118,7 @@ switch:
     name: "${node_name} fan periodic"
     optimistic: true
     turn_off_action:
-      # prevent indefinite fan running when turned off when sensing
+      # prevent indefinite fan running when turned off during measurement
       - switch.turn_off: fan
 
   - platform: gpio
@@ -107,6 +128,47 @@ switch:
     internal: false
     icon: mdi:fan
     entity_category: config
+    
+  - platform: template
+    id: fake_co2
+    name: "${node_name} Use fake CO2 for status"
+    optimistic: true
+
+number:
+
+  - platform: template
+    id: fan_time_before_pm25
+    name: "${node_name} Fan time before PM2.5 measurement"
+    min_value: 0
+    max_value: 60000
+    step: 1000
+    optimistic: true
+
+  - platform: template
+    id: fake_co2_value
+    name: "${node_name} Fake CO2 value (if enabled)"
+    min_value: 300
+    max_value: 2000
+    step: 10
+    optimistic: true
+
+  # Orange color tuning
+  
+  - platform: template
+    id: orange_green
+    name: "${node_name} orange: green component"
+    min_value: 0
+    max_value: 255
+    step: 1
+    optimistic: true
+
+  - platform: template
+    id: orange_green_exponent	# how steep is transition from orange to red
+    name: "${node_name} orange: green component: exponent"
+    min_value: 1
+    max_value: 5
+    step: 1
+    optimistic: true
 
 uart:
   - id: uart_pm1006 # PM2.5
@@ -171,6 +233,21 @@ binary_sensor:
   - platform: template
     id: pm1006_with_fan_running
     name: "${node_name} PM2.5 measured when fan was running"
+    
+  - platform: homeassistant
+    name: "Want window open"
+    entity_id: input_boolean.want_window_open_auto
+    id: want_window_open
+ 
+  - platform: homeassistant
+    name: "Curtains auto"
+    entity_id: input_boolean.curtains_auto
+    id: curtains_auto
+
+  - platform: homeassistant
+    name: "Sleep mode"
+    entity_id: input_boolean.sleep_mode
+    id: sleep_mode
 
 button:
 
@@ -244,6 +321,7 @@ rtttl:
   gain: 60%
 
 light:
+  # FIXME: top LED sometimes enables blue subpixel, not sure why; it seems that max_refresh_rate can cure it
   - id: led_rgb  # used to briefly flash on boot, but stopped, maybe after adding individual lights…
     internal: False
     platform: esp32_rmt_led_strip
@@ -251,8 +329,9 @@ light:
     chipset: WS2812
     pin: $GPIO_RGB_LED
     num_leds: 3
-    #rmt_channel: 6   # Don't know why, and it probably doesn't matter…
-    rmt_channel: 4
+    rmt_channel: 6   # Don't know why 6, and it probably doesn't matter…
+    #max_refresh_rate: 950ms  # might help with color shift issues; 900ms isn't enough, 1000ms seems enough
+    max_refresh_rate: 100ms  # or maybe max_refresh_rate should equal to update_interval?
     name: "${node_name} RGB LED indicator"
     effects:
       - random:
@@ -264,6 +343,69 @@ light:
       - addressable_random_twinkle:
       - addressable_fireworks:
       - addressable_flicker:
+      - addressable_lambda:
+          name: "Air status"
+          #update_interval: 1s
+          update_interval: 100ms
+          lambda: |-
+            if (id(sleep_mode).state) {
+              it.all() = Color::BLACK;
+              return;
+            }
+            
+            // TODO: indentation for ternary operators
+            
+            const float co2 = id(fake_co2).state ? id(fake_co2_value).state : id(co2_value).state;
+            const float pm25 = id(pm2_5_value).state;
+            const int ha_connected = id(ha_api).is_connected();
+            //ESP_LOGD("air status", "co2: % 7.2f pm25: % 7.2f", co2, pm25);
+            
+            const int og = id(orange_green).state;
+            const int ogex = id(orange_green_exponent).state;
+            
+            // top: CO2 smooth indicator with sudden break at 1000 ppm (=ventilation suggested)
+            it.get(2) = 
+              isnan(co2)
+                ? Color::BLACK
+                :
+                  Color(
+                    /* red = */ min(255, max(0, (int)((co2 - 400.0) / 600.0 * 255.0))),
+                    /* green = */ 
+                    (co2 > 1000)
+                      ? (og - min(og, max(0, (int)(pow((co2 - 1000.0) / 500.0, ogex) * og))))
+                      : 255,
+                    /* blue = */ 0
+                  );
+            
+            // middle: CO2 very low / very high or warning about temporary curtain settings
+            it.get(1) = 
+              (co2 < 420)
+                ? Color(0, 255, 0)
+                : (
+                  (co2 > 1500)
+                    ? Color(255, 0, 0)
+                    : (
+                      (ha_connected && (!id(curtains_auto).state || id(want_window_open).state))
+                        ? Color(255, 165, 0)
+                        : Color::BLACK
+                      )
+                  );
+              
+              
+            // bottom: PM25
+            it.get(0) = 
+              isnan(pm25)
+                ? Color::BLACK
+                : 
+                  Color(
+                    min(255, max(0, (int)((pm25 - 5.0) / 15.0 * 255.0))),
+                    (pm25 > 20) ? 0 : 255,
+                    0
+                  );
+              
+            //ESP_LOGD("air status", "top:    RGB(%3d, %3d, %3d)", it.get(2).get_red(), it.get(2).get_green(), it.get(2).get_blue());
+            //ESP_LOGD("air status", "middle: RGB(%3d, %3d, %3d)", it.get(1).get_red(), it.get(1).get_green(), it.get(1).get_blue());
+            //ESP_LOGD("air status", "bottom: RGB(%3d, %3d, %3d)", it.get(0).get_red(), it.get(0).get_green(), it.get(0).get_blue());
 
   - platform: partition
     name: "${node_name} LED bottom"
