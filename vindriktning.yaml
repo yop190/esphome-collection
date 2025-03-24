@@ -77,9 +77,9 @@ bluetooth_proxy:
 
 packages:
   sounds: !include
-    file: sounds.yaml
+    file: packages/sounds.yaml
   sonicare_v6ak: !include
-    file: sonicare.yaml
+    file: packages/sonicare.yaml
     vars:
       id: sonicare_v6ak
       name: "v6ak's Sonicare toothbrush"
