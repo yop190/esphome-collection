@@ -27,11 +27,6 @@ globals:
     type: int
     restore_value: yes
 
-  - id: ${id}_active_seconds
-    type: int
-    restore_value: yes
-    initial_value: '0.0'
-
   - id: ${id}_toothbrush_status
     type: int
     restore_value: True
@@ -50,13 +45,16 @@ sensor:
   - platform: ble_client
     ble_client_id: ${id}
     id: ${id}_toothbrush_battery_value
+    name: ${name} Battery raw
     type: characteristic
     service_uuid: 180F
     characteristic_uuid: 2A19
     notify: True
     unit_of_measurement: '%'
     device_class: battery
-    internal: True
+    filters:
+      - filter_out:
+        - nan
     on_value:
       then:
         - lambda: |-
@@ -82,10 +80,11 @@ sensor:
     accuracy_decimals: 0
 
 
+
   - platform: ble_client
     ble_client_id: ${id}
     id: ${id}_toothbrush_active_seconds
-    name: ${name} Active
+    name: ${name} Active Time
     type: characteristic
     service_uuid: 477ea600-a260-11e4-ae37-0002a5d50002
     characteristic_uuid: 477ea600-a260-11e4-ae37-0002a5d54090
@@ -93,42 +92,21 @@ sensor:
     device_class: duration
     accuracy_decimals: 0
     unit_of_measurement: s
-    internal: True
-    on_value:
-      then:
-        - lambda: |-
-            if (id(${id}_connected)) {
-              if (x >= 0 && x <= 121) {
-                id(${id}_active_seconds) = x;
-                ESP_LOGD("ble_sensor", "Active time in seconds updated: %d", id(${id}_active_seconds));
-              } else {
-                ESP_LOGD("ble_sensor", "Received invalid active time in seconds value: %d", x);
-              }
-            } else {
-              ESP_LOGD("ble_sensor", "Active time in seconds not updated because the device is not connected");
-            }
-
-
-  - platform: template
-    id: ${id}_toothbrush_active
-    name: ${name} Active Time
-    lambda: |-
-      return id(${id}_active_seconds); 
-    device_class: duration
-    unit_of_measurement: s
-    accuracy_decimals: 0
-    update_interval: 1s
+    filters:
+      - filter_out:
+        - nan
 
   - platform: ble_client
     ble_client_id: ${id}
     id: ${id}_toothbrush_stat
-    name: ${name} Status
+    name: ${name} Handle Status raw
     type: characteristic
     service_uuid: 477ea600-a260-11e4-ae37-0002a5d50001
     characteristic_uuid: 477ea600-a260-11e4-ae37-0002a5d54010
     notify: True
-    update_interval: 5s
-    internal: True
+    filters:
+      - filter_out:
+        - nan
     on_value:
       then:
         - lambda: |-
@@ -149,6 +127,5 @@ sensor:
     name: ${name} Handle Status
     lambda: |-
       return id(${id}_toothbrush_status);
-    update_interval: 5s
     accuracy_decimals: 0
 
