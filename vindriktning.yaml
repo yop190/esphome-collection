@@ -137,6 +137,14 @@ switch:
     name: "${node_name} Use fake CO2 for status"
     optimistic: true
 
+  - platform: template
+    name: "${node_name} automatic baseline calibration"
+    optimistic: true
+    on_turn_on:
+      mhz19.abc_enable: co2_sensor
+    on_turn_off:
+      mhz19.abc_disable: co2_sensor
+
 number:
 
   - platform: template
