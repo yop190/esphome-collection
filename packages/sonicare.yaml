@@ -88,13 +88,14 @@ sensor:
     type: characteristic
     service_uuid: 477ea600-a260-11e4-ae37-0002a5d50002
     characteristic_uuid: 477ea600-a260-11e4-ae37-0002a5d54090
-    notify: True
+    notify: True  # event-driven
+    update_interval: never  # prevent polling, as the state is already updated by events
     device_class: duration
     accuracy_decimals: 0
     unit_of_measurement: s
     filters:
       - filter_out:
-        - nan
+        - nan  # We get NaN when disconnected.
 
   - platform: ble_client
     ble_client_id: ${id}
