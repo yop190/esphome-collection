@@ -78,6 +78,12 @@ bluetooth_proxy:
 packages:
   sounds: !include
     file: sounds.yaml
+  sonicare_v6ak: !include
+    file: sonicare.yaml
+    vars:
+      id: sonicare_v6ak
+      name: "v6ak's Sonicare toothbrush"
+      mac: !secret toothbrush_mac_v6
 
 script:
   - id: update_sensors_requiring_fan
