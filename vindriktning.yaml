@@ -290,17 +290,6 @@ button:
       - mhz19.calibrate_zero: co2_sensor
       - logger.log: "CO2: Zero calibration finished"
 
-  - platform: template
-    name: "${node_name} buzz"
-    on_press:
-      - output.ledc.set_frequency:
-          id: buzzer_output
-          frequency: 1000Hz
-      - output.set_level:
-          id: buzzer_output
-          level: 50%
-
-
 light:
   # FIXME: top LED sometimes enables blue subpixel, not sure why; it seems that max_refresh_rate can cure it
   - id: led_rgb  # used to briefly flash on boot, but stopped, maybe after adding individual lights…
