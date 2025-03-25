@@ -301,7 +301,8 @@ light:
     num_leds: 3
     #rmt_channel: 6   # Don't know why 6, and it probably doesn't matter… Not supported with ESP IDF 5
     #max_refresh_rate: 950ms  # might help with color shift issues; 900ms isn't enough, 1000ms seems enough
-    max_refresh_rate: 100ms  # or maybe max_refresh_rate should equal to update_interval?
+    #max_refresh_rate: 100ms  # or maybe max_refresh_rate should equal to update_interval?
+    max_refresh_rate: 10ms  # try something lower
     name: "${node_name} RGB LED indicator"
     effects:
       - random:
