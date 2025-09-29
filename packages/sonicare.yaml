@@ -48,8 +48,8 @@ sensor:
     type: characteristic
     service_uuid: 180F
     characteristic_uuid: 2A19
-    notify: True  # event-driven
-    update_interval: never  # prevent polling, as the state is already updated by events
+    notify: true  # event-driven
+    update_interval: 60s  # prevent polling, as the state is already updated by events
     unit_of_measurement: '%'
     accuracy_decimals: 0
     device_class: battery
@@ -64,8 +64,8 @@ sensor:
     type: characteristic
     service_uuid: 477ea600-a260-11e4-ae37-0002a5d50002
     characteristic_uuid: 477ea600-a260-11e4-ae37-0002a5d54090
-    notify: True  # event-driven
-    update_interval: never  # prevent polling, as the state is already updated by events
+    notify: true  # event-driven
+    update_interval: 60s  # prevent polling, as the state is already updated by events
     device_class: duration
     accuracy_decimals: 0
     unit_of_measurement: s
@@ -80,8 +80,8 @@ sensor:
     type: characteristic
     service_uuid: 477ea600-a260-11e4-ae37-0002a5d50001
     characteristic_uuid: 477ea600-a260-11e4-ae37-0002a5d54010
-    notify: True  # event-driven
-    update_interval: never  # prevent polling, as the state is already updated by events
+    notify: true  # event-driven
+    update_interval: 60s  # prevent polling, as the state is already updated by events
     filters:
       - filter_out:
         - nan  # We get NaN when disconnected.
