@@ -12,16 +12,16 @@ ble_client:
             ESP_LOGD("ble_client_lambda", "Connected to ${name}");
             // require updates of battery state, because notifications don't always work for battery
             // https://community.home-assistant.io/t/dynamically-change-update-interval/108074/11
-            id(${id}_toothbrush_battery_value).set_update_interval(1 * 1000 /* unit:ms */);
-            id(${id}_toothbrush_battery_value).call_setup();
+            //id(${id}_toothbrush_battery_value).set_update_interval(1 * 1000 /* unit:ms */);
+            //id(${id}_toothbrush_battery_value).call_setup();
     on_disconnect:
       then:
         - lambda: |-
             id(${id}_connected) = false;
             ESP_LOGD("ble_client_lambda", "Disconnected from ${name}");
             // https://community.home-assistant.io/t/dynamically-change-update-interval/108074/11
-            id(${id}_toothbrush_battery_value).set_update_interval(UINT32_MAX /* = never */);
-            id(${id}_toothbrush_battery_value).call_setup();
+            //id(${id}_toothbrush_battery_value).set_update_interval(UINT32_MAX /* = never */);
+            //id(${id}_toothbrush_battery_value).call_setup();
 
 globals:
 
